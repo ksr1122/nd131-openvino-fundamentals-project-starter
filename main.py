@@ -104,6 +104,22 @@ def update_count(count, cur_time):
     prev_count = count
     return send_update
 
+def draw_boxes(frame, result, width, height, prob_threshold):
+    '''
+    Draw bounding boxes onto the frame.
+    '''
+    count = 0
+    for box in result[0][0]: # Output shape is 1x1x100x7
+        conf = box[2]
+        if conf >= prob_threshold:
+            count = 1
+            xmin = int(box[3] * width)
+            ymin = int(box[4] * height)
+            xmax = int(box[5] * width)
+            ymax = int(box[6] * height)
+            cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 1)
+    return frame, count
+
 def infer_on_stream(args, client):
     """
     Initialize the inference network, stream video to network,

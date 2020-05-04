@@ -169,11 +169,19 @@ def infer_on_stream(args, client):
         p_frame = p_frame.transpose((2,0,1))
         p_frame = p_frame.reshape(1, *p_frame.shape)
 
-            ### TODO: Get the results of the inference request ###
+        ### Start asynchronous inference for specified request ###
+        infer_network.exec_net(p_frame)
 
-            ### TODO: Extract any desired stats from the results ###
+        ### Wait for the result ###
+        if infer_network.wait() == 0:
 
-            ### TODO: Calculate and send relevant information on ###
+            ### Get the results of the inference request ###
+            result = infer_network.get_output()
+
+            ### Extract any desired stats from the results ###
+            frame, current_count = draw_boxes(frame, result, width, height, float(prob_threshold))
+
+            ### Calculate and send relevant information on ###
             ### current_count, total_count and duration to the MQTT server ###
             ### Topic "person": keys of "count" and "total" ###
             ### Topic "person/duration": key of "duration" ###

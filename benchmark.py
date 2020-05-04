@@ -19,27 +19,20 @@
  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-
 import os
 import sys
 import time
 import socket
 import json
 import cv2
-import imghdr
 
 import logging as log
-import paho.mqtt.client as mqtt
 
 from argparse import ArgumentParser
 from inference import Network
 
-# MQTT server environment variables
-HOSTNAME = socket.gethostname()
-IPADDRESS = socket.gethostbyname(HOSTNAME)
-MQTT_HOST = IPADDRESS
-MQTT_PORT = 3001
-MQTT_KEEPALIVE_INTERVAL = 60
+import numpy as np
+import tensorflow as tf
 
 def build_argparser():
     """
@@ -66,12 +59,6 @@ def build_argparser():
                         help="Probability threshold for detections filtering"
                         "(0.5 by default)")
     return parser
-
-def connect_mqtt():
-    ### Connect to the MQTT client ###
-    client = mqtt.Client()
-    client.connect(MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE_INTERVAL)
-    return client
 
 prev_count = 0
 total_count = 0
@@ -105,10 +92,27 @@ def update_count(count, cur_time):
     prev_count = count
     return send_update
 
+def draw_boxes_tf(frame, result, width, height, prob_threshold):
+    # Output shape is (boxes[0], scores[0], num_detection)
+    boxes = np.squeeze(result[0])
+    scores = np.squeeze(result[1])
+    num_detection = int(result[2])
+    if not num_detection:
+        return frame, 0
+    count = 0
+    for idx in range(0, num_detection):
+        box = boxes[idx]
+        conf = scores[idx]
+        if conf >= prob_threshold:
+            count = 1
+            xmin = int(box[1] * width)
+            ymin = int(box[0] * height)
+            xmax = int(box[3] * width)
+            ymax = int(box[2] * height)
+            cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 1)
+        return frame, count
+
 def draw_boxes(frame, result, width, height, prob_threshold):
-    '''
-    Draw bounding boxes onto the frame.
-    '''
     count = 0
     for box in result[0][0]: # Output shape is 1x1x100x7
         conf = box[2]
@@ -121,106 +125,109 @@ def draw_boxes(frame, result, width, height, prob_threshold):
             cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (0, 255, 0), 1)
     return frame, count
 
-def infer_on_stream(args, client):
-    """
-    Initialize the inference network, stream video to network,
-    and output stats and video.
+def get_model(model_path):
+    graph = tf.Graph()
+    with graph.as_default():
+        od_graph_def = tf.GraphDef()
+        with tf.gfile.GFile(model_path, 'rb') as fid:
+            serialized_graph = fid.read()
+            od_graph_def.ParseFromString(serialized_graph)
+            tf.import_graph_def(od_graph_def, name='')
+    return graph
 
-    :param args: Command line arguments parsed by `build_argparser()`
-    :param client: MQTT client
-    :return: None
-    """
-    ### Handle the input stream ###
-    cap = cv2.VideoCapture(args.input)
-    cap.open(args.input)
+def tensor_detect(cap, out, width, height, args):
+    model_graph = get_model(args.model)
 
-    # Input validation
-    if not cap.isOpened():
-        print("Please provide a valid image/video file")
-        exit(1)
+    global total_count, duration, avg_duration
 
-    # Initialise the class
+    image_tensor = model_graph.get_tensor_by_name('image_tensor:0')
+    detection_boxes = model_graph.get_tensor_by_name('detection_boxes:0')
+    detection_scores = model_graph.get_tensor_by_name('detection_scores:0')
+    num_detection = model_graph.get_tensor_by_name('num_detections:0')
+
+    with tf.Session(graph=model_graph) as sess:
+        net_input_shape = (300, 300) # TODO: get from model
+
+        while cap.isOpened():
+
+            flag, frame = cap.read()
+            if not flag:
+                break
+
+            frame = cv2.resize(frame, net_input_shape)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            result = sess.run([detection_boxes, detection_scores, num_detection],
+                            feed_dict={image_tensor: np.expand_dims(frame, axis=0)})
+
+            frame, current_count = draw_boxes_tf(frame, result, *net_input_shape, float(args.prob_threshold))
+            send_update = update_count(current_count, cap.get(cv2.CAP_PROP_POS_MSEC) / 1000)
+            if send_update:
+                print(current_count, total_count, duration)
+
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            frame = cv2.resize(frame, (width, height))
+
+            out.write(frame)
+#             cv2.imwrite('out.png', frame)
+
+def infer_on_stream(cap, out, width, height, args):
     infer_network = Network()
-    # Set Probability threshold for detections
-    prob_threshold = args.prob_threshold
-
-    ### Load the model through `infer_network` ###
     infer_network.load_model(args.model, args.device, args.cpu_extension)
     net_input_shape = infer_network.get_input_shape()
-
-    # Grab the shape of the input
-    width = int(cap.get(3))
-    height = int(cap.get(4))
-
-    # Create a video writer for the output video
-#     out = cv2.VideoWriter('out.mp4', 0x00000021, cap.get(cv2.CAP_PROP_FPS), (width, height))
-
-    global total_count, avg_duration
-
-    ### Loop until stream is over ###
+    
     while cap.isOpened():
 
-        ### Read from the video capture ###
         flag, frame = cap.read()
         if not flag:
             break
 
-        ### Pre-process the image as needed ###
         p_frame = cv2.resize(frame, (net_input_shape[3], net_input_shape[2]))
         p_frame = p_frame.transpose((2,0,1))
         p_frame = p_frame.reshape(1, *p_frame.shape)
 
-        ### Start asynchronous inference for specified request ###
         infer_network.exec_net(p_frame)
 
-        ### Wait for the result ###
         if infer_network.wait() == 0:
 
-            ### Get the results of the inference request ###
             result = infer_network.get_output()
-
-            ### Extract any desired stats from the results ###
-            frame, current_count = draw_boxes(frame, result, width, height, float(prob_threshold))
-
-            ### Calculate and send relevant information on ###
-            ### current_count, total_count and duration to the MQTT server ###
-            ### Topic "person": keys of "count" and "total" ###
-            ### Topic "person/duration": key of "duration" ###
+            
+            frame, current_count = draw_boxes(frame, result, width, height, float(args.prob_threshold))
             send_update = update_count(current_count, cap.get(cv2.CAP_PROP_POS_MSEC) / 1000)
-            client.publish("person", json.dumps({"count": current_count, "total": total_count}))
             if send_update:
-                client.publish("person/duration", json.dumps({"duration": duration}))
+                print(current_count, total_count, duration)
 
-        ### Send the frame to the FFMPEG server ###
-        sys.stdout.buffer.write(frame)  
-        sys.stdout.flush()
-#         out.write(frame)
+        out.write(frame)
+#         cv2.imwrite('out.png', frame)
 
-        ### Write an output image if `single_image_mode` ###
-        ext = imghdr.what(args.input)
-        if ext:
-            cv2.imwrite('out.' + ext, frame)
+def pipeline(handler, args, output):
+    cap = cv2.VideoCapture(args.input)
+    cap.open(args.input)
+
+    width = int(cap.get(3))
+    height = int(cap.get(4))
+
+    out = cv2.VideoWriter(output, 0x00000021, cap.get(cv2.CAP_PROP_FPS), (width, height))
+
+    handler(cap, out, width, height, args)
 
     cap.release()
-#     out.release()
-    
+    out.release()
 
 def main():
-    """
-    Load the network and parse the output.
-
-    :return: None
-    """
-    # Grab command line args
     args = build_argparser().parse_args()
-    # Connect to the MQTT server
-    client = connect_mqtt()
-    # Perform inference on the input stream
-    infer_on_stream(args, client)
+    args.model = args.model + '.pb'
 
-    # Disconnect from MQTT server
-    client.disconnect()
-
+    start_time = time.time()
+    pipeline(tensor_detect, args, 'out-tensorflow.mp4')
+    print("Tensorflow\n\t time: ", time.time()-start_time, " sec")
+    
+    args = build_argparser().parse_args()
+    args.model = args.model + '.xml'
+    
+    start_time = time.time()
+    pipeline(infer_on_stream, args, 'out-inference.mp4')
+    print("Inference Engine\n\t time: ", time.time()-start_time, " sec")
 
 if __name__ == '__main__':
     main()

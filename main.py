@@ -129,6 +129,15 @@ def infer_on_stream(args, client):
     :param client: MQTT client
     :return: None
     """
+    ### Handle the input stream ###
+    cap = cv2.VideoCapture(args.input)
+    cap.open(args.input)
+
+    # Input validation
+    if not cap.isOpened():
+        print("Please provide a valid image/video file")
+        exit(1)
+
     # Initialise the class
     infer_network = Network()
     # Set Probability threshold for detections

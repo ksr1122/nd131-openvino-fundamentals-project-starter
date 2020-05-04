@@ -81,7 +81,6 @@ class Network:
         ### Return any necessary information ###
         return self.net_plugin.requests[req_id].wait(-1)
 
-    def get_output(self):
-        ### TODO: Extract and return the output results
-        ### Note: You may need to update the function parameters. ###
-        return
+    def get_output(self, req_id=0):
+        ### Extract and return the output results
+        return self.net_plugin.requests[req_id].outputs[self.output_blob]

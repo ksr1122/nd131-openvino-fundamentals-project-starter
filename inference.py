@@ -76,11 +76,10 @@ class Network:
         ### Start an asynchronous request ###
         self.infer_request_handle = self.net_plugin.start_async(request_id=req_id, inputs={self.input_blob: image})
 
-    def wait(self):
-        ### TODO: Wait for the request to be complete. ###
-        ### TODO: Return any necessary information ###
-        ### Note: You may need to update the function parameters. ###
-        return
+    def wait(self, req_id=0):
+        ### Wait for the request to be complete. ###
+        ### Return any necessary information ###
+        return self.net_plugin.requests[req_id].wait(-1)
 
     def get_output(self):
         ### TODO: Extract and return the output results

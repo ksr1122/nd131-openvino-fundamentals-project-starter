@@ -26,6 +26,7 @@ import time
 import socket
 import json
 import cv2
+import imghdr
 
 import logging as log
 import paho.mqtt.client as mqtt
@@ -185,11 +186,24 @@ def infer_on_stream(args, client):
             ### current_count, total_count and duration to the MQTT server ###
             ### Topic "person": keys of "count" and "total" ###
             ### Topic "person/duration": key of "duration" ###
+            send_update = update_count(current_count, cap.get(cv2.CAP_PROP_POS_MSEC) / 1000)
+            client.publish("person", json.dumps({"count": current_count, "total": total_count}))
+            if send_update:
+                client.publish("person/duration", json.dumps({"duration": duration}))
 
-        ### TODO: Send the frame to the FFMPEG server ###
+        ### Send the frame to the FFMPEG server ###
+        sys.stdout.buffer.write(frame)  
+        sys.stdout.flush()
+#         out.write(frame)
 
-        ### TODO: Write an output image if `single_image_mode` ###
+        ### Write an output image if `single_image_mode` ###
+        ext = imghdr.what(args.input)
+        if ext:
+            cv2.imwrite('out.' + ext, frame)
 
+    cap.release()
+#     out.release()
+    
 
 def main():
     """
@@ -203,6 +217,9 @@ def main():
     client = connect_mqtt()
     # Perform inference on the input stream
     infer_on_stream(args, client)
+
+    # Disconnect from MQTT server
+    client.disconnect()
 
 
 if __name__ == '__main__':

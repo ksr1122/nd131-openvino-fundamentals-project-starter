@@ -156,11 +156,18 @@ def infer_on_stream(args, client):
 
     global total_count, avg_duration
 
-        ### TODO: Pre-process the image as needed ###
+    ### Loop until stream is over ###
+    while cap.isOpened():
 
-        ### TODO: Start asynchronous inference for specified request ###
+        ### Read from the video capture ###
+        flag, frame = cap.read()
+        if not flag:
+            break
 
-        ### TODO: Wait for the result ###
+        ### Pre-process the image as needed ###
+        p_frame = cv2.resize(frame, (net_input_shape[3], net_input_shape[2]))
+        p_frame = p_frame.transpose((2,0,1))
+        p_frame = p_frame.reshape(1, *p_frame.shape)
 
             ### TODO: Get the results of the inference request ###
 

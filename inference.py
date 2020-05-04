@@ -72,11 +72,9 @@ class Network:
         ### Return the shape of the input layer ###
         return self.network.inputs[self.input_blob].shape
 
-    def exec_net(self):
-        ### TODO: Start an asynchronous request ###
-        ### TODO: Return any necessary information ###
-        ### Note: You may need to update the function parameters. ###
-        return
+    def exec_net(self, image, req_id=0):
+        ### Start an asynchronous request ###
+        self.infer_request_handle = self.net_plugin.start_async(request_id=req_id, inputs={self.input_blob: image})
 
     def wait(self):
         ### TODO: Wait for the request to be complete. ###

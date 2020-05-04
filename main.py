@@ -143,13 +143,18 @@ def infer_on_stream(args, client):
     # Set Probability threshold for detections
     prob_threshold = args.prob_threshold
 
-    ### TODO: Load the model through `infer_network` ###
+    ### Load the model through `infer_network` ###
+    infer_network.load_model(args.model, args.device, args.cpu_extension)
+    net_input_shape = infer_network.get_input_shape()
 
-    ### TODO: Handle the input stream ###
+    # Grab the shape of the input
+    width = int(cap.get(3))
+    height = int(cap.get(4))
 
-    ### TODO: Loop until stream is over ###
+    # Create a video writer for the output video
+#     out = cv2.VideoWriter('out.mp4', 0x00000021, cap.get(cv2.CAP_PROP_FPS), (width, height))
 
-        ### TODO: Read from the video capture ###
+    global total_count, avg_duration
 
         ### TODO: Pre-process the image as needed ###
 

@@ -40,7 +40,6 @@ MQTT_HOST = IPADDRESS
 MQTT_PORT = 3001
 MQTT_KEEPALIVE_INTERVAL = 60
 
-
 def build_argparser():
     """
     Parse command line arguments.
@@ -67,11 +66,10 @@ def build_argparser():
                         "(0.5 by default)")
     return parser
 
-
 def connect_mqtt():
-    ### TODO: Connect to the MQTT client ###
-    client = None
-
+    ### Connect to the MQTT client ###
+    client = mqtt.Client()
+    client.connect(MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE_INTERVAL)
     return client
 
 

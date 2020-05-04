@@ -72,6 +72,37 @@ def connect_mqtt():
     client.connect(MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE_INTERVAL)
     return client
 
+prev_count = 0
+total_count = 0
+
+duration = 0
+avg_duration = 0
+
+enter_time = 0.0
+person_in_frame = False
+
+def update_count(count, cur_time):
+    global prev_count, total_count, duration, avg_duration, enter_time, person_in_frame
+    
+    send_update = False
+    
+    if count > prev_count and not person_in_frame:
+        person_in_frame = True
+        total_count += 1
+        enter_time = cur_time
+
+    if person_in_frame:
+        duration = int(cur_time - enter_time)
+
+    if count < prev_count and person_in_frame:
+        if duration < 2: # false trigger
+            return
+        person_in_frame = False
+        avg_duration += int((duration - avg_duration) / total_count)
+        send_update = True
+
+    prev_count = count
+    return send_update
 
 def infer_on_stream(args, client):
     """
